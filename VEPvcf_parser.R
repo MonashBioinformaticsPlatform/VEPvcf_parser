@@ -68,3 +68,18 @@ importVEPVCFfiles <- function(vcfFiles,
   vcfs_imp$VEP_matrix <- allRes
   return(vcfs_imp)
 }
+
+melt_VEP <- function(x, handle=NULL, outCols=c('Allele','Consequence', 'IMPACT','SYMBOL','Gene')){
+  veps <- x$VEP_matrix 
+  if(is.null(handle)){ # just use the original's rownames as a handle
+    names(veps) <- rownames(x)
+  } else {
+    names(veps) <- x[,handle]
+  }
+  veps %<>% lapply(FUN=function(x){
+    x[x[,'Gene'] != '',outCols, drop=F]
+  })  # <--- Filter out "NO GENE" effects
+  long <- do.call(rbind, veps) %>% as.data.frame()
+  long$original_handle <- rep(names(veps), times=unlist(lapply(veps, nrow)))
+  return(long)
+}
