@@ -62,7 +62,7 @@ importVEPVCFfiles <- function(vcfFiles,
   allRes=list()
   for (i in 1:nrow(vcfs_imp)){
     samp <- vcfs_imp[i,sampleNameColumn]
-    allRes[[i]] = parseVEPInfo(x = vcfs_f$INFO[i],
+    allRes[[i]] = parseVEPInfo(x = vcfs_imp$INFO[i],
                                VEPcolnames=VEPcolnames[[ samp ]])
   }
   vcfs_imp$VEP_matrix <- allRes
