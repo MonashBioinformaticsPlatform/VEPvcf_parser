@@ -13,22 +13,40 @@ getVEPcolnames_fromMeta <- function(meta){
   vepInfo <- meta[grepl(pattern = '##INFO=<ID=CSQ',meta)] %>% 
     stringr::str_extract(pattern = '##INFO=\\<(.+)\\>', group = 1) %>%
     stringr::str_split_1(pattern = ',') %>% str_split('=', simplify = T)
+  if(length(vepInfo) == 0){
+    warning('VEP info header not found. Cannot populate vep fields.')
+    return(NULL)
+  }
   vepDescr <- vepInfo[vepInfo[,1]=="Description",2]
   vepDescr %<>% str_extract(pattern='Format: (.+)\"' , group = 1)
-  return(vepDescr %>% stringr::str_split_1(pattern ="\\|"))
+  return(vepDescr %>% stringr::str_split_1(pattern ="\\|") %>% trimws())
 }
 
-parseVEPtext <- function(x, VEPcolnames){
+getSnpEffcolnames_fromMeta <- function(meta){
+  snpEff <- meta[grepl(pattern = '##SnpEffVersion=',meta)]
+  snpEffInfo <- meta[grepl(pattern = '##INFO=<ID=ANN',meta)] %>% 
+    stringr::str_extract(pattern = '##INFO=\\<(.+)\\>', group = 1) %>%
+    stringr::str_split_1(pattern = ',') %>% str_split('=', simplify = T)
+  if(length(snpEffInfo) == 0){
+    warning('snpEff info header not found. Cannot populate snpEff fields.')
+    return(NULL)
+  }
+  snpEffDescr <- snpEffInfo[snpEffInfo[,1]=="Description",2]
+  snpEffDescr %<>% str_extract(pattern="Functional annotations: \'(.+)\'" , group = 1)
+  return(snpEffDescr %>% stringr::str_split_1(pattern ="\\|") %>% trimws())
+}
+
+parseVEPtext <- function(x, VEPcolnames, fieldName = 'CSQ'){
   if(is.na(x)) {
     return(NA)
   }
   nc=length(VEPcolnames)
   info <- stringr::str_split_1(x, pattern=';') %>% str_split('=', simplify = T)
-  filt = which(info[,1]=='CSQ')
+  filt = which(info[,1]==fieldName)
   if(length(filt) == 0){ # usually just a spanning deletion (ALT= '*')
     return(NA)
   } else if(length(filt)> 1){
-    warning('Multiple CSQ fields found. just using first')
+    warning('Multiple ',fieldName,' fields found. just using first')
     filt=filt[1]
   }
   csq = info[filt,2] %>% 
@@ -84,7 +102,7 @@ melt_VEP <- function(veps, vcf=NULL, handles=NULL, outCols=c('Allele','Consequen
 }
 
 
-readMultiVcfs <- function(vcfFiles, sampleNames, sampleNameColumn = 'SAMPLEID', filterIn = NULL, parseVEP = F){
+readMultiVcfs <- function(vcfFiles, sampleNames, sampleNameColumn = 'SAMPLEID', filterIn = NULL, parseAnno = 'none'){ #'VEP' or 'SNPEFF'
   nf <- length(vcfFiles)
   if(nf != length(sampleNames)){
     stop('Number of sampleNames not equal to number of files.')
@@ -99,7 +117,9 @@ readMultiVcfs <- function(vcfFiles, sampleNames, sampleNameColumn = 'SAMPLEID', 
   allAD_alt <- list()
   allInfo <- list()
   allVEPmats <- list()
+  allSnpEffmats <- list()
   vepColnames <- list()
+  snpEffColnames <- list()
   for(i in 1:nf){
     sn_i <- sampleNames[i]
     cat('\n processing file ', vcfFiles[i], '\n')
@@ -114,6 +134,7 @@ readMultiVcfs <- function(vcfFiles, sampleNames, sampleNameColumn = 'SAMPLEID', 
     allAD_alt[[ sn_i ]] = vepList$ALT
     allInfo[[ sn_i ]]  = vepList$INFO
     vepColnames[[ sn_i ]] = vepList$vepColnames
+    snpEffColnames[[ sn_i ]] = vepList$snpEffColnames
     # It's a good idea to check that all vep colnames are the same, since we imported different files
     if(i>1){
       diffFields <- setdiff(vepList$vepColnames, vepColnames[[ i-1 ]])
@@ -122,11 +143,18 @@ readMultiVcfs <- function(vcfFiles, sampleNames, sampleNameColumn = 'SAMPLEID', 
       }
     }
     
-    if(parseVEP){
+    if('VEP' %in% toupper(parseAnno)){
       cat('\n Processing VEP fields \n')
       allVEPmats[[ sn_i ]] <- extractVEP(vcf = vepList$variants,   # TODO extractVEP would be more efficient if could input vepList$INFO$CSQ
-                                         VEPcolnames = vepList$vepColnames,
+                                         VEPcolnames = vepList$vepColnames, fieldName = 'CSQ',
                                          varHandles = vepList$variants$varHandle )
+    }
+    if ('SNPEFF' %in% toupper( parseAnno )) {
+      cat('\n Processing SNPEFF fields \n')
+      allSnpEffmats[[ sn_i ]] <- extractVEP(vcf = vepList$variants,   # TODO extractVEP would be more efficient if could input vepList$INFO$CSQ
+                                         VEPcolnames = vepList$snpEffColnames, fieldName = 'ANN',
+                                         varHandles = vepList$variants$varHandle )
+      
     }
   }
   cat('\n Finished importing.\n')
@@ -144,7 +172,9 @@ readMultiVcfs <- function(vcfFiles, sampleNames, sampleNameColumn = 'SAMPLEID', 
   return(list(allVcfs = allVcfs, 
               allSamps = allSamps, 
               vepColnames = vepColnames, 
+              snpEffColnames = snpEffColnames,
               allVEPmats = allVEPmats,
+              allSnpEffmats = allSnpEffmats,
               fmats=list(allDP = allDP, allGQ = allGQ, allGT = allGT, allAD_ref = allAD_ref, allAD_alt = allAD_alt, allInfo = allInfo)))
 }
 
@@ -179,17 +209,18 @@ vcf2list <- function(fileName, filterIn = NULL) {  #, sn = NULL, sampleNameColum
     rownames(output[[nm]]) <- v_i$varHandle  # in theory varHandle should be unique per-row since it is the pasting together of CHROM,POS,REF and ALT
   }
   output[['vepColnames']] <- getVEPcolnames_fromMeta(tmp@meta)
+  output[['snpEffColnames']] <- getSnpEffcolnames_fromMeta(tmp@meta)
   return(output)
 }
 
 
-extractVEP <- function(vcf, VEPcolnames, varHandles = NULL){
+extractVEP <- function(vcf, VEPcolnames, varHandles = NULL, fieldName = 'CSQ'){
   allRes <- list()
   for (i in 1:nrow(vcf)){
     if(vcf$ALT[i] == '*' ){  # spanning deletion: normally no CSQ field
       tmp=NA
     } else {
-      tmp = parseVEPtext(x = vcf$INFO[i],  
+      tmp = parseVEPtext(x = vcf$INFO[i],  fieldName = fieldName,
                          VEPcolnames=VEPcolnames)
       #if(any(is.na(tmp))) { warning( paste0("No CSQ field found for entry number: ", i, "length:", length(tmp)) )}  #<<>>
     }

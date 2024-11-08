@@ -40,8 +40,8 @@ Output is a matrix, one line per **variant / affected gene** combination, with t
 Note: number of rows will be greater than in original VCF file.
 
 ### Limitations:
-This is only tested on one-alt-allele-per-line vcfs, not comma-separated alt alleles
-Also it expects some format fields that might not be present in some vcfs ('DP', 'GQ', 'GT' and 'AD') 
+This is only tested on one-alt-allele-per-line vcfs, not comma-separated alt alleles.
+Also it expects some format fields that might not be present in some vcfs ('DP', 'GQ', 'GT' and 'AD'). 
 
 ### Do lots of files at once:
 
