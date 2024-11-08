@@ -18,16 +18,15 @@ getVEPcolnames_fromMeta <- function(meta){
   return(vepDescr %>% stringr::str_split_1(pattern ="\\|"))
 }
 
-parseVEPInfo <- function(x, VEPcolnames){
+parseVEPtext <- function(x, VEPcolnames){
   if(is.na(x)) {
     return(NA)
   }
   nc=length(VEPcolnames)
   info <- stringr::str_split_1(x, pattern=';') %>% str_split('=', simplify = T)
   filt = which(info[,1]=='CSQ')
-  if(length(filt) == 0){
-    #warning('no CSQ field found') # stop <<>>
-    return(NA)                 #      <<>>
+  if(length(filt) == 0){ # usually just a spanning deletion (ALT= '*')
+    return(NA)
   } else if(length(filt)> 1){
     warning('Multiple CSQ fields found. just using first')
     filt=filt[1]
@@ -39,71 +38,36 @@ parseVEPInfo <- function(x, VEPcolnames){
   return(csq)
 }
 
-importVEPVCFfiles <- function(vcfFiles, 
-                            sampleNameColumn="SAMPLEID", # mutSignatures::importVCFfiles automatically creates this column
-                            filterIn=NULL, 
-                            sampleNames=NULL, ...){ # if not given, will use vcf file name stem
-  # usually, set filterIn='PASS'
-  
-  if(!is.null(sampleNames)){
-    filesXsamps = data.frame(file=vcfFiles, samp = sampleNames)
-  } else {
-    filesXsamps = data.frame(file=vcfFiles)
-    filesXsamps$samp = vcfFiles %>%
-    base::basename() %>%
-    stringr::str_remove('.gz$') %>%
-    stringr::str_remove('.vcf$')
-  }
-  filesXsamps$samp2 <-  make.names(filesXsamps$samp, unique = T)
-  
-  vcfs_imp_l <- readMultiVcfs(vcfFiles = vcfFiles,  # mutSignatures::importVCFfiles
-                          sampleNames = filesXsamps$samp2,
-                          sampleNameColumn = sampleNameColumn) #populate vcfs_imp$SAMPLEID with a derivative of the vcf file-name(s)
-                                            #sampleNameColumn = sampleNameColumn) # <<>>
-  vcfs_imp <- vcfs_imp_l$allVcfs
-  #VEPcolnames <- list()
-  #for(rw in 1:nrow(filesXsamps)){
-  #  VEPcolnames[[ filesXsamps$samp[rw] ]] <- getVEPcolnames( filesXsamps$file[rw] )  # different vcfs might have different VEP colnames
-  #}
-  VEPcolnames <- vcfs_imp_l$vepColnames
-  
-  # reduce size for efficiency
-  if(! is.null(filterIn)){
-    vcfs_imp <- vcfs_imp[vcfs_imp$FILTER %in% filterIn,]  
-  }
-  # parse VEP
-  #info <- vcfR::extract_info_tidy(x)
-  allRes=list()
-  for (i in 1:nrow(vcfs_imp)){
-    samp <- vcfs_imp[i,sampleNameColumn]  # which file did this originate from? Need to know so we can set up corresponding VEP fields
-    if (! samp %in% names(VEPcolnames)){
-      stop( 'samp not matching any VEP colname entry' )
-    }
-    if(vcfs_imp$ALT[i] == '*' ){  # spanning deletion: normally no CSQ field
-      tmp=NA
-    } else {
-      tmp = parseVEPInfo(x = vcfs_imp$INFO[i],
-                               VEPcolnames=VEPcolnames[[ samp ]])
-    
-      if(any(is.na(tmp))) { warning( paste0("No CSQ field found for entry number: ", i, "length:", length(tmp)) )}  #<<>>
-    }
-    allRes[[i]] <- tmp
-  }
-  vcfs_imp$VEP_matrix <- allRes
-  return(list(vcfs_imp = vcfs_imp, fmats = vcfs_imp_l$fmats))
-}
 
-melt_VEP <- function(x, handle=NULL, outCols=c('Allele','Consequence', 'IMPACT','SYMBOL','Gene')){
-  veps <- x$VEP_matrix 
-  if(is.null(handle)){ # just use the original's rownames as a handle
-    names(veps) <- rownames(x)
+melt_VEP <- function(veps, vcf=NULL, handles=NULL, outCols=c('Allele','Consequence', 'IMPACT','SYMBOL','Gene'), onlyGenes = T){ # from a list of VEP_matrices, 'handles' should be the rownames from which they came; these will be added in a new column
+  if(onlyGenes) {
+    GENEFILT = ''  # <-- this will filter out all effects where Gene == ''
   } else {
-    names(veps) <- x[,handle]
+    GENEFILT = 'IncludeAllEffects'
   }
-  NA_filt <- lapply(x$VEP_matrix, function(x){!is.null(dim(x))}) %>% unlist()
-  Spanning_del <- x$ALT != '*'
-  if(any(Spanning_del != NA_filt)){
-    warning('Some entries in VCF have no VEP matrix and are not spanning deletions.')
+  outCols %<>% as.character()
+  if(! is.null(vcf)){
+    if(length(veps) != nrow(vcf)){
+      warning('VCF table does not have same number of rows as length of vep list of matrices. Ignoring')
+      vcf=NULL
+    }
+  }
+  
+  if(is.null(handles)){ # just use the original's rownames as a handle
+    if(is.null(vcf)){
+      names(veps) <- as.character(1:length(veps))
+    } else {
+      names(veps) <- rownames(vcf)
+    }
+  } else {
+    names(veps) <- handles
+  }
+  NA_filt <- lapply(veps, function(x){!is.null(dim(x))}) %>% unlist()
+  if(!is.null(vcf)){
+    Spanning_del <- vcf$ALT != '*'
+    if(any(Spanning_del != NA_filt)){
+      warning('Some entries in VCF have no VEP matrix and are not spanning deletions.')
+    }
   }
   veps <- veps[NA_filt]
   veps %<>% lapply(FUN=function(x){
@@ -111,45 +75,130 @@ melt_VEP <- function(x, handle=NULL, outCols=c('Allele','Consequence', 'IMPACT',
       return(NA)
     } 
     else {
-      return(x[x[,'Gene'] != '',outCols, drop=F])
+      return(x[x[,'Gene'] != GENEFILT, outCols, drop=F])   # <--- Filter out "NO GENE" effects (GENEFILT='' by default)
     }
-  })  # <--- Filter out "NO GENE" effects
+  }) 
   long <- do.call(rbind, veps) %>% as.data.frame()
   long$original_rowname <- rep(names(veps), times=unlist(lapply(veps, nrow)))
   return(long)
 }
 
 
-readMultiVcfs <- function(vcfFiles, sampleNames, sampleNameColumn = 'SAMPLEID'){
+readMultiVcfs <- function(vcfFiles, sampleNames, sampleNameColumn = 'SAMPLEID', filterIn = NULL, parseVEP = F){
   nf <- length(vcfFiles)
   if(nf != length(sampleNames)){
     stop('Number of sampleNames not equal to number of files.')
   } 
   allVcfs <- list()
+  allSamps <- list()
   allDP <- list()
   allGQ <- list()
   #allAD <- list()
   allGT <- list()
   allAD_ref <- list()
   allAD_alt <- list()
+  allInfo <- list()
+  allVEPmats <- list()
   vepColnames <- list()
   for(i in 1:nf){
-    tmp <- vcfR::read.vcfR(vcfFiles[i], verbose = T)
-    allVcfs[[i]] = as.data.frame(cbind(tmp@fix, tmp@gt))
-    allVcfs[[i]][[sampleNameColumn]] = sampleNames[i]
-    vepColnames[[ sampleNames[i] ]] <- getVEPcolnames_fromMeta(tmp@meta)
-    allDP[[ sampleNames[i] ]] <- vcfR::extract.gt(x = tmp, element = 'DP', IDtoRowNames = F, as.numeric = T)
-    allGQ[[ sampleNames[i] ]] <- vcfR::extract.gt(x = tmp, element = 'GQ', IDtoRowNames = F, as.numeric = T)
-    allGT[[ sampleNames[i] ]] <- vcfR::extract.gt(x = tmp, element = 'GT', IDtoRowNames = F, as.numeric = F)
-    tmp_AD <- vcfR::extract.gt(x = tmp, element = 'AD', IDtoRowNames = F, as.numeric = F)
-    tmp_AD2 <- apply(tmp_AD, 2, function(x){as.numeric(stringr::str_split_fixed(x,',',n = 2))})
-    allAD_ref[[ sampleNames[i] ]] <- tmp_AD2[1:nrow(tmp@gt),]
-    allAD_alt[[ sampleNames[i] ]] <-  tmp_AD2[-c(1:nrow(tmp@gt)),]
+    sn_i <- sampleNames[i]
+    cat('\n processing file ', vcfFiles[i], '\n')
+    vepList <- vcf2list(fileName = vcfFiles[i], filterIn = filterIn) #, sn = sn_i, sampleNameColumn = sampleNameColumn)
+    vepList$variants[[sampleNameColumn]] = sn_i  # <-- add sample name as last column
+    allVcfs[[ sn_i ]] <- vepList$variants
+    allSamps[[ sn_i ]] <- vepList$samples
+    allDP[[ sn_i ]] = vepList$DP
+    allGQ[[ sn_i ]] = vepList$GQ
+    allGT[[ sn_i ]] = vepList$GT
+    allAD_ref[[ sn_i ]] = vepList$REF
+    allAD_alt[[ sn_i ]] = vepList$ALT
+    allInfo[[ sn_i ]]  = vepList$INFO
+    vepColnames[[ sn_i ]] = vepList$vepColnames
+    # It's a good idea to check that all vep colnames are the same, since we imported different files
+    if(i>1){
+      diffFields <- setdiff(vepList$vepColnames, vepColnames[[ i-1 ]])
+      if(length(diffFields) > 0){
+        warning(paste0('VEP field names do not appear to be consistent for entry ',sn_i, ' with previous.  \n Offending names: ', diffFields, collapse = ',' ))
+      }
+    }
+    
+    if(parseVEP){
+      cat('\n Processing VEP fields \n')
+      allVEPmats[[ sn_i ]] <- extractVEP(vcf = vepList$variants,   # TODO extractVEP would be more efficient if could input vepList$INFO$CSQ
+                                         VEPcolnames = vepList$vepColnames,
+                                         varHandles = vepList$variants$varHandle )
+    }
   }
-  allVcfs <- do.call(rbind, allVcfs)
-  #allDP <- do.call(rbind, allDP)
-  #allGQ <- do.call(rbind, allGQ)
-  #allAD <- do.call(rbind, allAD)
-  #allGT <- do.call(rbind, allGT)
-  return(list(allVcfs=allVcfs, vepColnames=vepColnames, fmats=list(allDP = allDP, allGQ=allGQ, allGT=allGT, allAD_ref = allAD_ref, allAD_alt = allAD_alt)))
+  cat('\n Finished importing.\n')
+  
+  # It's a good idea to check that all vep colnames are the same, since we imported different files
+  common_cols <- Reduce(intersect, vepColnames)
+  for(i in 1:length(vepColnames)){
+    diffFields <- vepColnames[[i]] [ ! vepColnames[[i]] %in% common_cols]
+    if(length(diffFields) > 0){
+      warning('Extra VEP field names in VCF:', vcfFiles[i],
+                ' \n Offending names: ', 
+                paste0(diffFields, collapse = ','), '\n')
+    }
+  }
+  return(list(allVcfs = allVcfs, 
+              allSamps = allSamps, 
+              vepColnames = vepColnames, 
+              allVEPmats = allVEPmats,
+              fmats=list(allDP = allDP, allGQ = allGQ, allGT = allGT, allAD_ref = allAD_ref, allAD_alt = allAD_alt, allInfo = allInfo)))
 }
+
+
+vcf2list <- function(fileName, filterIn = NULL) {  #, sn = NULL, sampleNameColumn = NULL){
+  tmp <- vcfR::read.vcfR(fileName, verbose = T)
+  output <- list()
+  if(! is.null(filterIn)){
+    rowFilt <- which(tmp@fix[,'FILTER'] %in% filterIn)  
+    tmp@fix <- tmp@fix[rowFilt,]
+    tmp@gt <- tmp@gt[rowFilt,]
+  }
+  output[['info']] <- vcfR::extract_info_tidy(tmp)  %>% as.matrix()  %>% apply(., 2, trimws) # trim whitespace
+  v_i <- as.data.frame(tmp@fix) #cbind(tmp@fix, tmp@gt)) 
+  v_i$varHandle <- apply(v_i[,c('CHROM', 'POS', 'REF', 'ALT')], 1, paste0, collapse='_')
+  #if(! any(c(is.null(sampleNameColumn), is.null(sn)))){
+  #  v_i[[sampleNameColumn]] = sn #<-- read for rbinding: add a column to denote source file nick-name
+  #}
+  output[['variants']] <- v_i
+  output[['samples']] <- as.data.frame(tmp@gt)
+  colnames(output[['samples']]) <- make.names( colnames(output[['samples']]) )
+  # assumes DP, AD, GQ and GT are present, and only 2 comma-separated values in AD (for ref and alt)
+  output[['DP']] <- vcfR::extract.gt(x = tmp, element = 'DP', IDtoRowNames = F, as.numeric = T)
+  output[['GQ']] <- vcfR::extract.gt(x = tmp, element = 'GQ', IDtoRowNames = F, as.numeric = T)
+  output[['GT']] <- vcfR::extract.gt(x = tmp, element = 'GT', IDtoRowNames = F, as.numeric = F)
+  tmp_AD <- vcfR::extract.gt(x = tmp, element = 'AD', IDtoRowNames = F, as.numeric = F)
+  tmp_AD2 <- apply(tmp_AD, 2, function(x){as.numeric(stringr::str_split_fixed(x,',',n = 2))})
+  output[['REF']] <- tmp_AD2[1:nrow(tmp@gt),]
+  output[['ALT']]<-  tmp_AD2[-c(1:nrow(tmp@gt)),]
+  
+  for(nm in names(output)){
+    rownames(output[[nm]]) <- v_i$varHandle  # in theory varHandle should be unique per-row since it is the pasting together of CHROM,POS,REF and ALT
+  }
+  output[['vepColnames']] <- getVEPcolnames_fromMeta(tmp@meta)
+  return(output)
+}
+
+
+extractVEP <- function(vcf, VEPcolnames, varHandles = NULL){
+  allRes <- list()
+  for (i in 1:nrow(vcf)){
+    if(vcf$ALT[i] == '*' ){  # spanning deletion: normally no CSQ field
+      tmp=NA
+    } else {
+      tmp = parseVEPtext(x = vcf$INFO[i],  
+                         VEPcolnames=VEPcolnames)
+      #if(any(is.na(tmp))) { warning( paste0("No CSQ field found for entry number: ", i, "length:", length(tmp)) )}  #<<>>
+    }
+    allRes[[i]] <- tmp
+  }
+  if(! is.null(varHandles)){
+    names(allRes) <- varHandles # apply(v_i[,c('CHROM', 'POS', 'REF', 'ALT')], 1, paste0, collapse='_')
+  }
+  return(allRes)  # list of length (nrow(vcf)) containing VEP matrices; each row in each matrix is 1 effect. 
+}
+
+

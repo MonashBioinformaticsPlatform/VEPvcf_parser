@@ -1,51 +1,5 @@
-**packages required:**
+############################################################################################################################
 
-vcfR
-
-stringr
-
-magrittr
-
-----
-
-**Useage example:**
-
-### Get a vcf file parsed into a list of several results matrices
-```
-library(stringr)
-library(magrittr)
-library(vcfR)
-source('VEPvcf_parser.R')
-
-# process a vcf file into several different tables:
-vcf_in <- vcf2list(fileName = "variants.vcf", filterIn = 'PASS')
-```
-Seven elements in list 'vcf_in' are tables having one row per variant:
-'variants', 'samples', 'DP', 'GQ', 'GT', 'REF', 'ALT'
-...and also there is the VEP field names in 'vepColnames'
-
-### Parse VEP fields:
-From the above list, can now parse the VEP fields into a list of matrices. Each matrix corresponds to one variant; each row in the matrix is one **effect** of the variant.
-```
-vepMatrices <- extractVEP(vcf = vcf_in$variants, VEPcolnames = vcf_in$vepColnames, varHandles = vcf_in$variants$varHandle )
-```
-
-To convert the list of matrices to one long format table (ignoring effects that are not explicitly linked to a gene) use `melt_VEP`:
-```
-long_effects_mat <- melt_VEP(veps = vepMatrices, vcf = vcf_in, onlyGenes = T, outCols = c('Allele','Consequence', 'IMPACT','SYMBOL','Gene'))
-```
-
-Output is a matrix, one line per **variant / affected gene** combination, with the columns from the original that are nominated in the `outCols` argument.
-Note: number of rows will be greater than in original VCF file.
-
-
-### Do lots of files at once:
-
-If vcf files are from non-overlapping genomic regions, with the same set of samples (e.g. results from chunking a file over genomic regions), can use `readMultiVcfs`
-See the below helper function for useage.
-
-
-```
 # This is an example script, meant for importing vcf files that are chunked over different regions of the genome (or separate INDEL and SNP vcfs), 
 # but NOT multiple vcfs of same region from different samples, as it assumes none of the variants are shared between vcf files.
 # Also it's only tested on one-alt-allele-per-line vcfs, not comma-separated alt alleles
@@ -112,6 +66,3 @@ rbind_VEP_VCF_files <- function(vcfFiles,
   long_effects_mat <- melt_VEP(veps = conCat_veps, vcf = vcfs_imp, onlyGenes = T, outCols = c('Allele','Consequence', 'IMPACT','SYMBOL','Gene'))  # outCols = common_cols to output all shared VEP fields
   return(list(vcfs_imp = vcfs_imp, fmats = fmats, long_effects_mat = long_effects_mat, VEPcolnames = common_cols))
 }
-```
-
-
