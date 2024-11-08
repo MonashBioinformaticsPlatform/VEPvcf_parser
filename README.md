@@ -20,12 +20,13 @@ source('VEPvcf_parser.R')
 # process a vcf file into several different tables:
 vcf_in <- vcf2list(fileName = "variants.vcf", filterIn = 'PASS')
 ```
-Seven elements in list 'vcf_in' are tables having one row per variant:
+Most elements in the output list ('vcf_in' above) are tables/matrices having one row per variant.
 'variants', 'samples', 'DP', 'GQ', 'GT', 'REF', 'ALT'
 ...and also there is the VEP field names in 'vepColnames'
 
 ### Parse VEP fields:
 From the above list, can now parse the VEP fields into a list of matrices. Each matrix corresponds to one variant; each row in the matrix is one **effect** of the variant.
+You will also need the parsed vcf from `vcf2list` (here, 'vcf_in').
 ```
 vepMatrices <- extractVEP(vcf = vcf_in$variants, VEPcolnames = vcf_in$vepColnames, varHandles = vcf_in$variants$varHandle )
 ```
@@ -38,6 +39,9 @@ long_effects_mat <- melt_VEP(veps = vepMatrices, vcf = vcf_in, onlyGenes = T, ou
 Output is a matrix, one line per **variant / affected gene** combination, with the columns from the original that are nominated in the `outCols` argument.
 Note: number of rows will be greater than in original VCF file.
 
+### Limitations:
+This is only tested on one-alt-allele-per-line vcfs, not comma-separated alt alleles
+Also it expects some format fields that might not be present in some vcfs ('DP', 'GQ', 'GT' and 'AD') 
 
 ### Do lots of files at once:
 
