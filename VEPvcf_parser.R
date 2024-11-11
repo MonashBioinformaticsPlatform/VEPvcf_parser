@@ -129,6 +129,7 @@ readMultiVcfs <- function(vcfFiles, sampleNames, sampleNameColumn = 'SAMPLEID', 
     allDP[[ sn_i ]] = vepList$DP
     allGQ[[ sn_i ]] = vepList$GQ
     allGT[[ sn_i ]] = vepList$GT
+    #allAD[[ sn_i ]] = vepList$AD
     allAD_ref[[ sn_i ]] = vepList$REF
     allAD_alt[[ sn_i ]] = vepList$ALT
     allInfo[[ sn_i ]]  = vepList$INFO
@@ -144,13 +145,13 @@ readMultiVcfs <- function(vcfFiles, sampleNames, sampleNameColumn = 'SAMPLEID', 
     }
     
     if('VEP' %in% toupper(parseAnno)){
-      cat('\n Processing VEP fields \n')
+      cat('\n  * Processing VEP fields under CSQ field')
       allVEPmats[[ sn_i ]] <- extractAnn(vcf = vepList$variants,   # TODO extractAnn would be more efficient if could input vepList$INFO$CSQ
                                          annColnames = vepList$vepColnames, fieldName = 'CSQ',
                                          varHandles = vepList$variants$varHandle )
     }
     if ('SNPEFF' %in% toupper( parseAnno )) {
-      cat('\n Processing SNPEFF fields \n')
+      cat('\n  * Processing SNPEFF fields under ANN field')
       allSnpEffmats[[ sn_i ]] <- extractAnn(vcf = vepList$variants,   # TODO extractAnn would be more efficient if could input vepList$INFO$CSQ
                                          annColnames = vepList$snpEffColnames, fieldName = 'ANN',
                                          varHandles = vepList$variants$varHandle )
@@ -179,7 +180,7 @@ readMultiVcfs <- function(vcfFiles, sampleNames, sampleNameColumn = 'SAMPLEID', 
 }
 
 
-vcf2list <- function(fileName, filterIn = NULL) {  #, sn = NULL, sampleNameColumn = NULL){
+vcf2list <- function(fileName, filterIn = NULL, formFields = c('DP','GT','GQ','AD')) {  #, sn = NULL, sampleNameColumn = NULL){
   tmp <- vcfR::read.vcfR(fileName, verbose = T)
   output <- list()
   if(! is.null(filterIn)){
@@ -192,34 +193,34 @@ vcf2list <- function(fileName, filterIn = NULL) {  #, sn = NULL, sampleNameColum
     }
   }
   if( any(grepl(pattern = ',', x = tmp@fix[,'ALT']))){
-    cat('\nWARNING: ALT field contains comma-separated alleles on same row. Wide format VCFs are not tested with VEPvcf_parser.\n')
+    cat('\n WARNING: ALT field contains comma-separated alleles on same row. Wide format VCFs are not tested with VEPvcf_parser.\n 
+        AD_alt counts will include NAs where multiple ALT alleles occur.\n')
     warning('ALT field contains comma-separated alleles on same row. Wide format VCFs are not tested with VEPvcf_parser.')
   }
-  print('Processing info field')
+  cat ('\n  * Processing info field')
   output[['info']] <- vcfR::extract_info_tidy(tmp)  %>% as.matrix()  %>% apply(., 2, trimws) # trim whitespace
-  print('Extracting variant fields')
+  cat('\n  * Extracting variant fields')
   v_i <- as.data.frame(tmp@fix) #cbind(tmp@fix, tmp@gt)) 
   v_i$varHandle <- apply(v_i[,c('CHROM', 'POS', 'REF', 'ALT')], 1, paste0, collapse='_')
-  #if(! any(c(is.null(sampleNameColumn), is.null(sn)))){
-  #  v_i[[sampleNameColumn]] = sn #<-- read for rbinding: add a column to denote source file nick-name
-  #}
-  print('Processing variant, samples, DP, GQ, GT fields')
+  cat('\n  * Processing variant, samples, DP, GQ, GT fields')
   output[['variants']] <- v_i
   if(nrow(tmp@gt) > 0){
     output[['samples']] <- as.data.frame(tmp@gt)
     colnames(output[['samples']]) <- make.names( colnames(output[['samples']]) )
     # assumes DP, AD, GQ and GT are present, and only 2 comma-separated values in AD (for ref and alt)
-    output[['DP']] <- vcfR::extract.gt(x = tmp, element = 'DP', IDtoRowNames = F, as.numeric = T)
-    output[['GQ']] <- vcfR::extract.gt(x = tmp, element = 'GQ', IDtoRowNames = F, as.numeric = T)
-    output[['GT']] <- vcfR::extract.gt(x = tmp, element = 'GT', IDtoRowNames = F, as.numeric = F)
-    print('Processing AD field')
-    tmp_AD <- vcfR::extract.gt(x = tmp, element = 'AD', IDtoRowNames = F, as.numeric = F)  %>% as.matrix()
-    tmp_AD2 <- apply(tmp_AD, 2, function(x){as.numeric(stringr::str_split_fixed(x,',',n = 2))}) %>% as.matrix()
-    if(nrow(tmp_AD2) != nrow(tmp@gt) *2){
-      cat('\n nrow AD =', nrow(tmp_AD2), ' but nrow @gt is ', nrow(tmp@gt), '\n')
-    } else {
-      output[['REF']] <- tmp_AD2[1:nrow(tmp@gt),,drop=F]
-      output[['ALT']]<-  tmp_AD2[-c(1:nrow(tmp@gt)),,drop=F]
+    for(ff in formFields){
+      output[[ ff ]] <-  vcfR::extract.gt(x = tmp, element = 'AD', IDtoRowNames = F, as.numeric = ff %in% c('DP', 'GQ')) %>% as.matrix()
+      if(ff == 'AD'){
+        cat('\n  * Processing AD field into separate REF and ALT readcount matrices, assuming only 1 ALT allele per line. Others will be ignored.')
+        tmp_AD <- output[['AD']]
+        tmp_AD2 <- apply(tmp_AD, 2, function(x){as.numeric(stringr::str_split_fixed(x,',',n = 2))}) %>% as.matrix()
+        if(nrow(tmp_AD2) != nrow(tmp@gt) *2){
+          cat('\n WARNING: nrow AD =', nrow(tmp_AD2), ' but nrow @gt is ', nrow(tmp@gt), '\n')
+        } else {
+          output[['REF']] <- tmp_AD2[1:nrow(tmp@gt),,drop=F]
+          output[['ALT']]<-  tmp_AD2[-c(1:nrow(tmp@gt)),,drop=F]
+        }
+      }
     }
   } else {
     cat('\n no @gt object available.')  
