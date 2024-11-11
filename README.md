@@ -31,7 +31,7 @@ vcf_in <- vcf2list(fileName = "variants.vcf", filterIn = 'PASS')
 ```
 
 Most elements in the output list ('vcf_in' above) are tables/matrices having one row per variant.
-'variants', 'samples', 'DP', 'GQ', 'GT', 'REF', 'ALT' (if default `formFields` value is used).
+The names of the elements are: `variants`, `samples`, and (if default `formFields` argument is used): `DP`, `GQ`, `GT`, `REF` and `ALT`.
 
 Also, there should be VEP field names (if present in the file) in `vcf_in$vepColnames` and / or snpEff field names (if present in vcf) in `vcf_in$snpEffColnames` 
 
@@ -60,6 +60,7 @@ The output after melting is a matrix, one line per **variant / affected gene** c
 
 ### Limitations:
 This is only tested on one-alt-allele-per-line vcfs, not comma-separated alt alleles.
+If you have multiallelic entries on single rows, use "bcftools norm -m - " (note the minus sign) to split multiallelic sites over several rows.
 Also it expects some format fields that might not be present in some vcfs ('DP', 'GQ', 'GT' and 'AD'), if these are absent then you will need to specify `formFields` argument with vaules that can be accepted by `vcfR::extract.gt()`. 
 
 ### Do lots of files at once:

@@ -150,7 +150,7 @@ readMultiVcfs <- function(vcfFiles, sampleNames, sampleNameColumn = 'SAMPLEID', 
     #allAD[[ sn_i ]] = vepList$AD
     allAD_ref[[ sn_i ]] = vepList$REF
     allAD_alt[[ sn_i ]] = vepList$ALT
-    allInfo[[ sn_i ]]  = vepList$INFO
+    allInfo[[ sn_i ]]  = vepList$info
     vepColnames[[ sn_i ]] = vepList$vepColnames
     snpEffColnames[[ sn_i ]] = vepList$snpEffColnames
     
@@ -189,12 +189,13 @@ readMultiVcfs <- function(vcfFiles, sampleNames, sampleNameColumn = 'SAMPLEID', 
     }
   }
   return(list(allVcfs = allVcfs, 
+              allInfo = allInfo,
               allSamps = allSamps, 
               vepColnames = vepColnames, 
               snpEffColnames = snpEffColnames,
               allVEPmats = allVEPmats,
               allSnpEffmats = allSnpEffmats,
-              fmats=list(allDP = allDP, allGQ = allGQ, allGT = allGT, allAD_ref = allAD_ref, allAD_alt = allAD_alt, allInfo = allInfo)))
+              fmats=list(allDP = allDP, allGQ = allGQ, allGT = allGT, allAD_ref = allAD_ref, allAD_alt = allAD_alt)))
 }
 
 
@@ -211,8 +212,9 @@ vcf2list <- function(fileName, filterIn = NULL, formFields = c('DP','GT','GQ','A
     }
   }
   if( any(grepl(pattern = ',', x = tmp@fix[,'ALT']))){
-    cat('\n WARNING: ALT field contains comma-separated alleles on same row. Wide format VCFs are not tested with VEPvcf_parser.\n 
-        AD_alt counts will include NAs where multiple ALT alleles occur.\n')
+    cat('\n WARNING: ALT field contains comma-separated alleles on same row.
+        \n Multiallelic rows are not tested with VEPvcf_parser.
+        \n Use "bcftools norm -m - " (note the minus sign) to split multiallelic sites across rows. \n')
     warning('ALT field contains comma-separated alleles on same row. Wide format VCFs are not tested with VEPvcf_parser.')
   }
   cat ('\n  * Processing info field')
