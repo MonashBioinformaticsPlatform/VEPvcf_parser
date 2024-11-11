@@ -1,3 +1,11 @@
+**Description**
+
+Some simple functions to facilitate extracting SnpEff and VEP fields from VCF files.
+
+Many of these are wrappers for vcfR bioconductor package functions with some additional string parsing. Please credit vcfR.
+
+----
+
 **packages required:**
 
 vcfR
@@ -11,6 +19,7 @@ magrittr
 **Useage example:**
 
 ### Get a vcf file parsed into a list of several results matrices
+
 ```
 library(stringr)
 library(magrittr)
@@ -20,28 +29,38 @@ source('VEPvcf_parser.R')
 # process a vcf file into several different tables:
 vcf_in <- vcf2list(fileName = "variants.vcf", filterIn = 'PASS')
 ```
-Most elements in the output list ('vcf_in' above) are tables/matrices having one row per variant.
-'variants', 'samples', 'DP', 'GQ', 'GT', 'REF', 'ALT'
-...and also there is the VEP field names in 'vepColnames'
 
-### Parse VEP fields:
+Most elements in the output list ('vcf_in' above) are tables/matrices having one row per variant.
+'variants', 'samples', 'DP', 'GQ', 'GT', 'REF', 'ALT' (if default `formFields` value is used).
+
+Also, there should be VEP field names (if present in the file) in `vcf_in$vepColnames` and / or snpEff field names (if present in vcf) in `vcf_in$snpEffColnames` 
+
+### Parse VEP or SnpEff fields:
+
 From the above list, can now parse the VEP fields into a list of matrices. Each matrix corresponds to one variant; each row in the matrix is one **effect** of the variant.
+
 You will also need the parsed vcf from `vcf2list` (here, 'vcf_in').
+
 ```
-vepMatrices <- extractVEP(vcf = vcf_in$variants, VEPcolnames = vcf_in$vepColnames, varHandles = vcf_in$variants$varHandle )
+vepMatrices <- extractAnn(vcf = vcf_in$variants, annColnames  = vcf_in$vepColnames, varHandles = vcf_in$variants$varHandle , fieldName = 'CSQ')
+snpEffMatrices <- extractAnn(vcf = vcf_in$variants, annColnames  = vcf_in$snpEffColnames, varHandles = vcf_in$variants$varHandle , fieldName = 'ANN')
 ```
 
 To convert the list of matrices to one long format table (ignoring effects that are not explicitly linked to a gene) use `melt_VEP`:
 ```
 long_effects_mat <- melt_VEP(veps = vepMatrices, vcf = vcf_in, onlyGenes = T, outCols = c('Allele','Consequence', 'IMPACT','SYMBOL','Gene'))
 ```
+This should work for snpEff matrices too *provided* that the nominated `outCols` are fieldnames that are present in the snpEff matrices.
 
-Output is a matrix, one line per **variant / affected gene** combination, with the columns from the original that are nominated in the `outCols` argument.
-Note: number of rows will be greater than in original VCF file.
+Available fields should be present in  vcf_in$vepColnames and vcf_in$snpEffColnames
+
+<br>
+
+The output after melting is a matrix, one line per **variant / affected gene** combination, with the columns from the original that are nominated in the `outCols` argument. Therefore, the number of rows will be greater than in the original VCF file.
 
 ### Limitations:
 This is only tested on one-alt-allele-per-line vcfs, not comma-separated alt alleles.
-Also it expects some format fields that might not be present in some vcfs ('DP', 'GQ', 'GT' and 'AD'). 
+Also it expects some format fields that might not be present in some vcfs ('DP', 'GQ', 'GT' and 'AD'), if these are absent then you will need to specify `formFields` argument with vaules that can be accepted by vcfR::extract.gt(). 
 
 ### Do lots of files at once:
 
