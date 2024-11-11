@@ -94,15 +94,15 @@ rbind_VEP_VCF_files <- function(vcfFiles,
   }
   filesXsamps$samp2 <-  make.names(filesXsamps$samp, unique = T)
   
-  # import vcf files and parse VEP parts of INFO column
-  vcfs_imp_l <- readMultiVcfs(vcfFiles = vcfFiles,  # mutSignatures::importVCFfiles
+# import vcf files and parse VEP parts of INFO column
+  vcfs_imp_l <- readMultiVcfs(vcfFiles = vcfFiles,  
                               sampleNames = filesXsamps$samp2,
                               sampleNameColumn = sampleNameColumn,
                               filterIn = 'PASS',  # could be unspecified, if so, no pre-filter
-                              parseVEP = TRUE) #populate vcfs_imp$SAMPLEID with a derivative of the vcf file-name(s)
-  # Names of the output elements in list vcfs_imp_l are  "allVcfs", "allSamps", "vepColnames", "allVEPmats", "fmats"  
-  
-  # It's a good idea to check that all vep colnames are the same, since we imported different files
+                              parseAnno = c('VEP','SNPEFF'))
+  # This assumes that the vcf file contains both VEP and SNPEFF output; if not, edit the parseAnno argument.
+
+# It's a good idea to check that all vep colnames are the same, since we imported different files
   common_cols <- Reduce(intersect, vcfs_imp_l$vepColnames)
   all_cols <- vcfs_imp_l$vepColnames %>% unlist() %>% unique()
   cat('\n Shared VEP field names: ',paste0(common_cols, sep=','),'\n')
@@ -131,11 +131,14 @@ rbind_VEP_VCF_files <- function(vcfFiles,
   }
   cat('\n Finished rbinding \n')
   conCat_veps <- do.call(c, vcfs_imp_l$allVEPmats)
+  conCat_snpEffs <- do.call(c, vcfs_imp_l$allSnpEffmats)
   cat('\n Melting list of matrices to long format \n')
   ### setdiff( vcfs_imp_l$vepColnames)
-  long_effects_mat <- melt_VEP(veps = conCat_veps, vcf = vcfs_imp, onlyGenes = T, outCols = c('Allele','Consequence', 'IMPACT','SYMBOL','Gene'))  # outCols = common_cols to output all shared VEP fields
+  long_vep_effects_mat <- melt_VEP(veps = conCat_veps, vcf = vcfs_imp, onlyGenes = T, outCols = c('Allele','Consequence', 'IMPACT','SYMBOL','Gene'))  # outCols = common_cols to output all shared VEP fields
+  long_snpEff_effects_mat <- melt_VEP(veps = conCat_snpEffs, vcf = vcfs_imp, onlyGenes = T, outCols = c('Allele','Consequence', 'IMPACT','SYMBOL','Gene'))  # outCols = common_cols to output all shared VEP fields
   return(list(vcfs_imp = vcfs_imp, fmats = fmats, long_effects_mat = long_effects_mat, VEPcolnames = common_cols))
 }
+
 ```
 
 
