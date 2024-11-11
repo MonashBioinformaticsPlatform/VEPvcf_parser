@@ -56,12 +56,11 @@ parseAnnoText <- function(x, annColnames, fieldName = 'CSQ'){  # for snpEff, set
 }
 
 
-melt_VEP <- function(veps, vcf=NULL, handles=NULL, outCols=c('Allele','Consequence', 'IMPACT','SYMBOL','Gene'), onlyGenes = T){ # from a list of VEP_matrices, 'handles' should be the rownames from which they came; these will be added in a new column
-  if(onlyGenes) {
-    GENEFILT = ''  # <-- this will filter out all effects where Gene == ''
-  } else {
-    GENEFILT = 'IncludeAllEffects'
-  }
+melt_VEP <- function(veps, 
+                     vcf=NULL, 
+                     handles=NULL, 
+                     outCols=c('Allele','Consequence', 'IMPACT','SYMBOL','Gene'), 
+                     onlyGenes = T) { # from a list of VEP_matrices, 'handles' should be the rownames from which they came; these will be added in a new column
   outCols %<>% as.character()
   if(! is.null(vcf)){
     if(length(veps) != nrow(vcf)){
@@ -87,14 +86,33 @@ melt_VEP <- function(veps, vcf=NULL, handles=NULL, outCols=c('Allele','Consequen
     }
   }
   veps <- veps[NA_filt]
-  veps %<>% lapply(FUN=function(x){
-    if(length(x) == 1 && is.na(x)){
-      return(NA)
-    } 
-    else {
-      return(x[x[,'Gene'] != GENEFILT, outCols, drop=F])   # <--- Filter out "NO GENE" effects (GENEFILT='' by default)
+  
+  # use first element in geneColChoices that matches any of the colnaes of the first vep matrix 
+  geneColChoices <- c('Gene', 'Gene_Name', 'Gene_ID', 'SYMBOL')  # VEP 
+  geneCol <- geneColChoices [ which(geneColChoices %in% colnames(veps[[1]]))[1] ] 
+  if(onlyGenes & length(geneCol) > 0){
+    GENEFILT = ''  # <-- this will filter out all effects where Gene == ''
+    veps %<>% lapply(FUN=function(x){
+      if(length(x) == 1 && is.na(x)){
+        return(NA)
+      } 
+      else {
+        return(x[x[,geneCol] != GENEFILT, outCols, drop=F])   # <--- Filter out "NO GENE" effects (GENEFILT='' by default)
+      }
+    }) 
+  } else {
+    if( length( geneCol ) == 0 & onlyGenes){
+      warning('Non-standard field name for gene in annotation fields. Cannot filter out non-gene associated effects.')
     }
-  }) 
+    veps %<>% lapply(FUN=function(x){
+      if(length(x) == 1 && is.na(x)){
+        return(NA)
+      } 
+      else {
+        return(x[,outCols, drop=F])
+      }
+    })
+  }
   long <- do.call(rbind, veps) %>% as.data.frame()
   long$original_rowname <- rep(names(veps), times=unlist(lapply(veps, nrow)))
   return(long)
