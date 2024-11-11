@@ -1,4 +1,3 @@
-#library(mutSignatures)
 library(stringr)
 library(magrittr)
 library(vcfR)
@@ -11,12 +10,12 @@ getVEPcolnames <- function(x,n=-1){
 getVEPcolnames_fromMeta <- function(meta){
   vep <- meta[grepl(pattern = '##VEP=',meta)]
   vepInfo <- meta[grepl(pattern = '##INFO=<ID=CSQ',meta)] %>% 
-    stringr::str_extract(pattern = '##INFO=\\<(.+)\\>', group = 1) %>%
-    stringr::str_split_1(pattern = ',') %>% str_split('=', simplify = T)
+    stringr::str_extract(pattern = '##INFO=\\<(.+)\\>', group = 1)
   if(length(vepInfo) == 0){
     warning('VEP info header not found. Cannot populate vep fields.')
-    return(NULL)
+    return(NA)
   }
+  vepInfo %<>% stringr::str_split_1(pattern = ',') %>% str_split('=', simplify = T)
   vepDescr <- vepInfo[vepInfo[,1]=="Description",2]
   vepDescr %<>% str_extract(pattern='Format: (.+)\"' , group = 1)
   return(vepDescr %>% stringr::str_split_1(pattern ="\\|") %>% trimws())
@@ -25,22 +24,22 @@ getVEPcolnames_fromMeta <- function(meta){
 getSnpEffcolnames_fromMeta <- function(meta){
   snpEff <- meta[grepl(pattern = '##SnpEffVersion=',meta)]
   snpEffInfo <- meta[grepl(pattern = '##INFO=<ID=ANN',meta)] %>% 
-    stringr::str_extract(pattern = '##INFO=\\<(.+)\\>', group = 1) %>%
-    stringr::str_split_1(pattern = ',') %>% str_split('=', simplify = T)
+    stringr::str_extract(pattern = '##INFO=\\<(.+)\\>', group = 1) 
   if(length(snpEffInfo) == 0){
     warning('snpEff info header not found. Cannot populate snpEff fields.')
-    return(NULL)
+    return(NA)
   }
+  snpEffInfo %<>% stringr::str_split_1(pattern = ',') %>% str_split('=', simplify = T)
   snpEffDescr <- snpEffInfo[snpEffInfo[,1]=="Description",2]
   snpEffDescr %<>% str_extract(pattern="Functional annotations: \'(.+)\'" , group = 1)
   return(snpEffDescr %>% stringr::str_split_1(pattern ="\\|") %>% trimws())
 }
 
-parseVEPtext <- function(x, VEPcolnames, fieldName = 'CSQ'){
-  if(is.na(x)) {
+parseAnnoText <- function(x, annColnames, fieldName = 'CSQ'){  # for snpEff, set to 'ANN'
+  if(is.na(annColnames[1]) | is.na(x)) {
     return(NA)
   }
-  nc=length(VEPcolnames)
+  nc=length(annColnames)
   info <- stringr::str_split_1(x, pattern=';') %>% str_split('=', simplify = T)
   filt = which(info[,1]==fieldName)
   if(length(filt) == 0){ # usually just a spanning deletion (ALT= '*')
@@ -49,11 +48,11 @@ parseVEPtext <- function(x, VEPcolnames, fieldName = 'CSQ'){
     warning('Multiple ',fieldName,' fields found. just using first')
     filt=filt[1]
   }
-  csq = info[filt,2] %>% 
+  ann = info[filt,2] %>% 
     str_split_1(",") %>% 
     str_split_fixed("\\|", n = nc)
-  colnames(csq)=VEPcolnames
-  return(csq)
+  colnames(ann)=annColnames
+  return(ann)
 }
 
 
@@ -135,9 +134,10 @@ readMultiVcfs <- function(vcfFiles, sampleNames, sampleNameColumn = 'SAMPLEID', 
     allInfo[[ sn_i ]]  = vepList$INFO
     vepColnames[[ sn_i ]] = vepList$vepColnames
     snpEffColnames[[ sn_i ]] = vepList$snpEffColnames
+    
     # It's a good idea to check that all vep colnames are the same, since we imported different files
-    if(i>1){
-      diffFields <- setdiff(vepList$vepColnames, vepColnames[[ i-1 ]])
+    if(i>1 && length(vepColnames) > 1){
+      diffFields <- setdiff(vepList$vepColnames, vepColnames[[ length(vepColnames)-1 ]])
       if(length(diffFields) > 0){
         warning(paste0('VEP field names do not appear to be consistent for entry ',sn_i, ' with previous.  \n Offending names: ', diffFields, collapse = ',' ))
       }
@@ -145,14 +145,14 @@ readMultiVcfs <- function(vcfFiles, sampleNames, sampleNameColumn = 'SAMPLEID', 
     
     if('VEP' %in% toupper(parseAnno)){
       cat('\n Processing VEP fields \n')
-      allVEPmats[[ sn_i ]] <- extractVEP(vcf = vepList$variants,   # TODO extractVEP would be more efficient if could input vepList$INFO$CSQ
-                                         VEPcolnames = vepList$vepColnames, fieldName = 'CSQ',
+      allVEPmats[[ sn_i ]] <- extractAnn(vcf = vepList$variants,   # TODO extractAnn would be more efficient if could input vepList$INFO$CSQ
+                                         annColnames = vepList$vepColnames, fieldName = 'CSQ',
                                          varHandles = vepList$variants$varHandle )
     }
     if ('SNPEFF' %in% toupper( parseAnno )) {
       cat('\n Processing SNPEFF fields \n')
-      allSnpEffmats[[ sn_i ]] <- extractVEP(vcf = vepList$variants,   # TODO extractVEP would be more efficient if could input vepList$INFO$CSQ
-                                         VEPcolnames = vepList$snpEffColnames, fieldName = 'ANN',
+      allSnpEffmats[[ sn_i ]] <- extractAnn(vcf = vepList$variants,   # TODO extractAnn would be more efficient if could input vepList$INFO$CSQ
+                                         annColnames = vepList$snpEffColnames, fieldName = 'ANN',
                                          varHandles = vepList$variants$varHandle )
       
     }
@@ -183,28 +183,47 @@ vcf2list <- function(fileName, filterIn = NULL) {  #, sn = NULL, sampleNameColum
   tmp <- vcfR::read.vcfR(fileName, verbose = T)
   output <- list()
   if(! is.null(filterIn)){
-    rowFilt <- which(tmp@fix[,'FILTER'] %in% filterIn)  
-    tmp@fix <- tmp@fix[rowFilt,]
-    tmp@gt <- tmp@gt[rowFilt,]
+    rowFilt <- which(tmp@fix[,'FILTER'] %in% filterIn) 
+    if(length(rowFilt) > 0){
+      tmp@fix <- tmp@fix[rowFilt,]
+      tmp@gt <- tmp@gt[rowFilt,]
+    } else {
+      warning('No FILTER values passed filter. Ignoring filterIn argument.')
+    }
   }
+  if( any(grepl(pattern = ',', x = tmp@fix[,'ALT']))){
+    cat('\nWARNING: ALT field contains comma-separated alleles on same row. Wide format VCFs are not tested with VEPvcf_parser.\n')
+    warning('ALT field contains comma-separated alleles on same row. Wide format VCFs are not tested with VEPvcf_parser.')
+  }
+  print('Processing info field')
   output[['info']] <- vcfR::extract_info_tidy(tmp)  %>% as.matrix()  %>% apply(., 2, trimws) # trim whitespace
+  print('Extracting variant fields')
   v_i <- as.data.frame(tmp@fix) #cbind(tmp@fix, tmp@gt)) 
   v_i$varHandle <- apply(v_i[,c('CHROM', 'POS', 'REF', 'ALT')], 1, paste0, collapse='_')
   #if(! any(c(is.null(sampleNameColumn), is.null(sn)))){
   #  v_i[[sampleNameColumn]] = sn #<-- read for rbinding: add a column to denote source file nick-name
   #}
+  print('Processing variant, samples, DP, GQ, GT fields')
   output[['variants']] <- v_i
-  output[['samples']] <- as.data.frame(tmp@gt)
-  colnames(output[['samples']]) <- make.names( colnames(output[['samples']]) )
-  # assumes DP, AD, GQ and GT are present, and only 2 comma-separated values in AD (for ref and alt)
-  output[['DP']] <- vcfR::extract.gt(x = tmp, element = 'DP', IDtoRowNames = F, as.numeric = T)
-  output[['GQ']] <- vcfR::extract.gt(x = tmp, element = 'GQ', IDtoRowNames = F, as.numeric = T)
-  output[['GT']] <- vcfR::extract.gt(x = tmp, element = 'GT', IDtoRowNames = F, as.numeric = F)
-  tmp_AD <- vcfR::extract.gt(x = tmp, element = 'AD', IDtoRowNames = F, as.numeric = F)
-  tmp_AD2 <- apply(tmp_AD, 2, function(x){as.numeric(stringr::str_split_fixed(x,',',n = 2))})
-  output[['REF']] <- tmp_AD2[1:nrow(tmp@gt),]
-  output[['ALT']]<-  tmp_AD2[-c(1:nrow(tmp@gt)),]
-  
+  if(nrow(tmp@gt) > 0){
+    output[['samples']] <- as.data.frame(tmp@gt)
+    colnames(output[['samples']]) <- make.names( colnames(output[['samples']]) )
+    # assumes DP, AD, GQ and GT are present, and only 2 comma-separated values in AD (for ref and alt)
+    output[['DP']] <- vcfR::extract.gt(x = tmp, element = 'DP', IDtoRowNames = F, as.numeric = T)
+    output[['GQ']] <- vcfR::extract.gt(x = tmp, element = 'GQ', IDtoRowNames = F, as.numeric = T)
+    output[['GT']] <- vcfR::extract.gt(x = tmp, element = 'GT', IDtoRowNames = F, as.numeric = F)
+    print('Processing AD field')
+    tmp_AD <- vcfR::extract.gt(x = tmp, element = 'AD', IDtoRowNames = F, as.numeric = F)  %>% as.matrix()
+    tmp_AD2 <- apply(tmp_AD, 2, function(x){as.numeric(stringr::str_split_fixed(x,',',n = 2))}) %>% as.matrix()
+    if(nrow(tmp_AD2) != nrow(tmp@gt) *2){
+      cat('\n nrow AD =', nrow(tmp_AD2), ' but nrow @gt is ', nrow(tmp@gt), '\n')
+    } else {
+      output[['REF']] <- tmp_AD2[1:nrow(tmp@gt),,drop=F]
+      output[['ALT']]<-  tmp_AD2[-c(1:nrow(tmp@gt)),,drop=F]
+    }
+  } else {
+    cat('\n no @gt object available.')  
+  }
   for(nm in names(output)){
     rownames(output[[nm]]) <- v_i$varHandle  # in theory varHandle should be unique per-row since it is the pasting together of CHROM,POS,REF and ALT
   }
@@ -214,14 +233,14 @@ vcf2list <- function(fileName, filterIn = NULL) {  #, sn = NULL, sampleNameColum
 }
 
 
-extractVEP <- function(vcf, VEPcolnames, varHandles = NULL, fieldName = 'CSQ'){
+extractAnn <- function(vcf, annColnames, varHandles = NULL, fieldName = 'CSQ'){  # fieldname = 'ANN' for snpEff
   allRes <- list()
   for (i in 1:nrow(vcf)){
     if(vcf$ALT[i] == '*' ){  # spanning deletion: normally no CSQ field
       tmp=NA
     } else {
-      tmp = parseVEPtext(x = vcf$INFO[i],  fieldName = fieldName,
-                         VEPcolnames=VEPcolnames)
+      tmp = parseAnnoText(x = vcf$INFO[i],  fieldName = fieldName,
+                         annColnames = annColnames)
       #if(any(is.na(tmp))) { warning( paste0("No CSQ field found for entry number: ", i, "length:", length(tmp)) )}  #<<>>
     }
     allRes[[i]] <- tmp
