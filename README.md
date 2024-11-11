@@ -50,9 +50,9 @@ To convert the list of matrices to one long format table (ignoring effects that 
 ```
 long_effects_mat <- melt_VEP(veps = vepMatrices, vcf = vcf_in, onlyGenes = T, outCols = c('Allele','Consequence', 'IMPACT','SYMBOL','Gene'))
 ```
-This should work for snpEff matrices too *provided* that the nominated `outCols` are fieldnames that are present in the snpEff matrices.
+This should work for snpEff matrices too **provided** that the nominated `outCols` are fieldnames that are present in the snpEff matrices.
 
-Available fields should be present in  vcf_in$vepColnames and vcf_in$snpEffColnames
+Available fields should be present in `vcf_in$vepColnames` and `vcf_in$snpEffColnames`.
 
 <br>
 
@@ -60,11 +60,12 @@ The output after melting is a matrix, one line per **variant / affected gene** c
 
 ### Limitations:
 This is only tested on one-alt-allele-per-line vcfs, not comma-separated alt alleles.
-Also it expects some format fields that might not be present in some vcfs ('DP', 'GQ', 'GT' and 'AD'), if these are absent then you will need to specify `formFields` argument with vaules that can be accepted by vcfR::extract.gt(). 
+Also it expects some format fields that might not be present in some vcfs ('DP', 'GQ', 'GT' and 'AD'), if these are absent then you will need to specify `formFields` argument with vaules that can be accepted by `vcfR::extract.gt()`. 
 
 ### Do lots of files at once:
 
-If vcf files are from non-overlapping genomic regions, with the same set of samples (e.g. results from chunking a file over genomic regions), can use `readMultiVcfs`
+If vcf files are from non-overlapping genomic regions, with the same set of samples (e.g. results from chunking a file over genomic regions), can use `readMultiVcfs`.
+
 See the below helper function for useage.
 
 
