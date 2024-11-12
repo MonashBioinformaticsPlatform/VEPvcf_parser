@@ -39,16 +39,16 @@ parseAnnoText <- function(x, annColnames, fieldName = 'CSQ'){  # for snpEff, set
   if(is.na(annColnames[1]) | is.na(x)) {
     return(NA)
   }
-  nc=length(annColnames)
+  nc <- length(annColnames)
   info <- stringr::str_split_1(x, pattern=';') %>% str_split('=', simplify = T)
-  filt = which(info[,1]==fieldName)
+  filt <- which(info[,1]==fieldName)
   if(length(filt) == 0){ # usually just a spanning deletion (ALT= '*')
     return(NA)
   } else if(length(filt)> 1){
     warning('Multiple ',fieldName,' fields found. just using first')
     filt=filt[1]
   }
-  ann = info[filt,2] %>% 
+  ann <- info[filt,2] %>% 
     str_split_1(",") %>% 
     str_split_fixed("\\|", n = nc)
   colnames(ann)=annColnames
@@ -141,18 +141,18 @@ readMultiVcfs <- function(vcfFiles, sampleNames, sampleNameColumn = 'SAMPLEID', 
     sn_i <- sampleNames[i]
     cat('\n processing file ', vcfFiles[i], '\n')
     vepList <- vcf2list(fileName = vcfFiles[i], filterIn = filterIn) #, sn = sn_i, sampleNameColumn = sampleNameColumn)
-    vepList$variants[[sampleNameColumn]] = sn_i  # <-- add sample name as last column
+    vepList$variants[[sampleNameColumn]] <- sn_i  # <-- add sample name as last column
     allVcfs[[ sn_i ]] <- vepList$variants
     allSamps[[ sn_i ]] <- vepList$samples
-    allDP[[ sn_i ]] = vepList$DP
-    allGQ[[ sn_i ]] = vepList$GQ
-    allGT[[ sn_i ]] = vepList$GT
-    #allAD[[ sn_i ]] = vepList$AD
-    allAD_ref[[ sn_i ]] = vepList$REF
-    allAD_alt[[ sn_i ]] = vepList$ALT
-    allInfo[[ sn_i ]]  = vepList$info
-    vepColnames[[ sn_i ]] = vepList$vepColnames
-    snpEffColnames[[ sn_i ]] = vepList$snpEffColnames
+    allDP[[ sn_i ]] <- vepList$DP
+    allGQ[[ sn_i ]] <- vepList$GQ
+    allGT[[ sn_i ]] <- vepList$GT
+    #allAD[[ sn_i ]] <- vepList$AD
+    allAD_ref[[ sn_i ]] <- vepList$REF
+    allAD_alt[[ sn_i ]] <- vepList$ALT
+    allInfo[[ sn_i ]]  <- vepList$info
+    vepColnames[[ sn_i ]] <- vepList$vepColnames
+    snpEffColnames[[ sn_i ]] <- vepList$snpEffColnames
     
     # It's a good idea to check that all vep colnames are the same, since we imported different files
     if(i>1 && length(vepColnames) > 1){
@@ -229,7 +229,7 @@ vcf2list <- function(fileName, filterIn = NULL, formFields = c('DP','GT','GQ','A
     colnames(output[['samples']]) <- make.names( colnames(output[['samples']]) )
     # assumes DP, AD, GQ and GT are present, and only 2 comma-separated values in AD (for ref and alt)
     for(ff in formFields){
-      output[[ ff ]] <-  vcfR::extract.gt(x = tmp, element = 'AD', IDtoRowNames = F, as.numeric = ff %in% c('DP', 'GQ')) %>% as.matrix()
+      output[[ ff ]] <-  vcfR::extract.gt(x = tmp, element = ff, IDtoRowNames = F, as.numeric = ff %in% c('DP', 'GQ')) %>% as.matrix()
       if(ff == 'AD'){
         cat('\n  * Processing AD field into separate REF and ALT readcount matrices, assuming only 1 ALT allele per line. Others will be ignored.')
         tmp_AD <- output[['AD']]
@@ -238,7 +238,7 @@ vcf2list <- function(fileName, filterIn = NULL, formFields = c('DP','GT','GQ','A
           cat('\n WARNING: nrow AD =', nrow(tmp_AD2), ' but nrow @gt is ', nrow(tmp@gt), '\n')
         } else {
           output[['REF']] <- tmp_AD2[1:nrow(tmp@gt),,drop=F]
-          output[['ALT']]<-  tmp_AD2[-c(1:nrow(tmp@gt)),,drop=F]
+          output[['ALT']] <-  tmp_AD2[-c(1:nrow(tmp@gt)),,drop=F]
         }
       }
     }
@@ -258,9 +258,9 @@ extractAnn <- function(vcf, annColnames, varHandles = NULL, fieldName = 'CSQ'){ 
   allRes <- list()
   for (i in 1:nrow(vcf)){
     if(vcf$ALT[i] == '*' ){  # spanning deletion: normally no CSQ field
-      tmp=NA
+      tmp <- NA
     } else {
-      tmp = parseAnnoText(x = vcf$INFO[i],  fieldName = fieldName,
+      tmp <- parseAnnoText(x = vcf$INFO[i],  fieldName = fieldName,
                          annColnames = annColnames)
       #if(any(is.na(tmp))) { warning( paste0("No CSQ field found for entry number: ", i, "length:", length(tmp)) )}  #<<>>
     }
@@ -271,5 +271,3 @@ extractAnn <- function(vcf, annColnames, varHandles = NULL, fieldName = 'CSQ'){ 
   }
   return(allRes)  # list of length (nrow(vcf)) containing VEP matrices; each row in each matrix is 1 effect. 
 }
-
-
